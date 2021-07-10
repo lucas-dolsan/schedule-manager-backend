@@ -1,5 +1,5 @@
 const sha256 = require("sha256")
-const usuarioModel = require("../models/usuarioModel.js")
+const colaboradorModel = require("../models/colaboradorModel")
 const { tokenHashSalt, passwordHashSalt, invalidSymbols } = require("../config/auth-config")
 
 function generateAccessToken(login, password) {
@@ -11,13 +11,13 @@ function hashPassword(login, password) {
 }
 
 async function getUserFromToken(accessToken) {
-    const user = await usuarioModel.findOne({ "auth.accessToken": accessToken })
+    const user = await colaboradorModel.findOne({ "auth.accessToken": accessToken })
     return user
 }
 
 async function wipeUsers(request, response) {
     
-    await usuarioModel.deleteMany()
+    await colaboradorModel.deleteMany()
     
     return response.sendStatus(200)
 }
@@ -51,7 +51,7 @@ async function isAccessTokenValid(accessToken) {
         return false
     }
     
-    const validTokens = new Array(await usuarioModel.find({}, "auth.accessToken"))[0].map(
+    const validTokens = new Array(await colaboradorModel.find({}, "auth.accessToken"))[0].map(
         ({ auth }) => auth.accessToken
     )
     
@@ -59,20 +59,20 @@ async function isAccessTokenValid(accessToken) {
 }
 
 async function login(request, response) {
-    const {username, senha} = request.body
+    const { login, password } = request.body
 
-    const usuario = await usuarioModel.findOne({
-        "username": username,
+    const colaborador = await colaboradorModel.findOne({
+        "auth.login": login,
     })
 
-    if (!usuario) {
+    if (!colaborador) {
         return response.json({
             message: "Usuário inexistente",
         })
     }
-    if (usuario.senha === hashPassword(username, senha)) {
+    if (colaborador.auth.password === hashPassword(login, password)) {
         return response.json({
-            accessToken: usuario.auth.accessToken,
+            accessToken: colaborador.auth.accessToken,
         })
     } else {
         return response.json({
@@ -134,6 +134,8 @@ function validateLogin(login) {
 }
 
 async function register(request, response) {
+    const { login, nome, matricula, setor, password } = request.body
+
     const isLoginValid = validateLogin(login)
 
     if (!isLoginValid.valid) {
@@ -142,38 +144,45 @@ async function register(request, response) {
         })
     }
 
-    const userExists = !!(await usuarioModel.findOne({
-        "username": username,
+    const userExists = !!(await colaboradorModel.findOne({
+        "auth.login": login,
     }))
 
     if (userExists) {
         return response.json({
-            message: "Esse username já foi cadastrado",
+            message: "Esse login já foi cadastrado",
         })
     }
 
-    const isPasswordValid = validatePassword(senha)
+    const isPasswordValid = validatePassword(password)
 
     if (!isPasswordValid.valid) {
         return response.json({ message: isPasswordValid.message })
     }
 
-    const hashedPassword = hashPassword(login, senha)
+    const hashedPassword = hashPassword(login, password)
 
-    const accessToken = generateAccessToken(username, hashedPassword)
+    const accessToken = generateAccessToken(login, hashedPassword)
 
-    const usuario = {
-        ...request.body,
+    const colaborador = {
+        nome,
+        matricula,
+        setor,
         auth: {
-            accessToken
+            login,
+            accessToken,
+            password: hashedPassword,
         },
     }
 
-    const usuarioDoc = new usuarioModel(usuario)
+    const colaboradorDoc = new colaboradorModel(colaborador)
 
-    await usuarioDoc.save()
+    await colaboradorDoc.save()
+    
 
-    return response.json(usuarioDoc.auth.accessToken)
+    return response.json({
+        accessToken,
+    })
 }
 
 module.exports = {
